@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#111827">
+  <title>TennisLedger · 共享账本</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section id="setup-view" class="center-card hidden" aria-live="polite">
+      <div class="brand-mark">TL</div>
+      <h1>TennisLedger</h1>
+      <p class="muted">网页代码已部署，但还没有连接 Supabase。</p>
+      <div class="setup-box">
+        <strong>还差两步</strong>
+        <ol>
+          <li>在 Supabase SQL Editor 执行 <code>supabase/schema.sql</code>。</li>
+          <li>把 Project URL 和 Publishable Key 填入 <code>config.js</code>。</li>
+        </ol>
+      </div>
+      <p class="muted small">具体步骤见仓库 README。</p>
+    </section>
+
+    <section id="login-view" class="center-card hidden">
+      <div class="brand-mark">TL</div>
+      <h1>TennisLedger</h1>
+      <p class="muted">管理员登录后才能查看和修改账本。</p>
+
+      <form id="login-form" class="stack-form">
+        <label>
+          <span>管理员邮箱</span>
+          <input id="email" type="email" autocomplete="username" required placeholder="admin@example.com">
+        </label>
+        <label>
+          <span>密码</span>
+          <input id="password" type="password" autocomplete="current-password" required placeholder="请输入密码">
+        </label>
+        <button id="login-button" class="primary full" type="submit">登录</button>
+      </form>
+      <p id="login-error" class="form-error hidden" role="alert"></p>
+    </section>
+
+    <section id="app-view" class="hidden">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">TennisLedger</p>
+          <h1 id="page-title">账本管理</h1>
+        </div>
+        <div class="topbar-actions">
+          <span id="admin-email" class="admin-email"></span>
+          <button id="logout-button" class="ghost" type="button">退出</button>
+        </div>
+      </header>
+
+      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+      <section id="ledger-list-view">
+        <div class="toolbar-card">
+          <div>
+            <h2>账本</h2>
+            <p class="muted">创建不同账本，分别管理成员余额。</p>
+          </div>
+          <form id="create-ledger-form" class="inline-form">
+            <input id="ledger-name" maxlength="60" required placeholder="例如：账本1">
+            <button class="primary" type="submit">新建账本</button>
+          </form>
+        </div>
+
+        <div id="ledger-list" class="ledger-grid"></div>
+        <div id="ledger-empty" class="empty-card hidden">
+          <h3>还没有账本</h3>
+          <p class="muted">在上方输入名称并创建第一个账本。</p>
+        </div>
+      </section>
+
+      <section id="ledger-detail-view" class="hidden">
+        <div class="detail-nav">
+          <button id="back-button" class="ghost" type="button">← 返回账本列表</button>
+          <div class="detail-nav-actions">
+            <button id="copy-summary-button" class="ghost" type="button">复制汇总</button>
+            <button id="delete-ledger-button" class="danger-ghost" type="button">删除账本</button>
+          </div>
+        </div>
+
+        <div class="summary-card">
+          <div>
+            <p class="eyebrow">当前账本</p>
+            <h2 id="ledger-title">—</h2>
+          </div>
+          <div class="total-box">
+            <span>总余额</span>
+            <strong id="total-balance">¥0.00</strong>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <h2>添加用户</h2>
+              <p class="muted">初始余额会自动记入第一条操作记录。</p>
+            </div>
+          </div>
+          <form id="add-member-form" class="member-add-form">
+            <label>
+              <span>姓名</span>
+              <input id="member-name" maxlength="60" required placeholder="例如：兵">
+            </label>
+            <label>
+              <span>初始余额</span>
+              <input id="member-balance" type="number" step="0.01" value="0" required inputmode="decimal">
+            </label>
+            <button class="primary" type="submit">添加用户</button>
+          </form>
+        </div>
+
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <h2>本群账单列表汇总</h2>
+              <p class="muted">按余额从高到低排列。</p>
+            </div>
+          </div>
+          <div id="member-list" class="member-list"></div>
+          <div id="member-empty" class="empty-inline hidden">还没有用户。</div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <h2>操作记录</h2>
+              <p class="muted">记录每次余额变化、修改前后数值和备注，最新记录在最上方。</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>用户</th>
+                  <th>变化</th>
+                  <th>修改前</th>
+                  <th>修改后</th>
+                  <th>备注</th>
+                </tr>
+              </thead>
+              <tbody id="transaction-list"></tbody>
+            </table>
+          </div>
+          <div id="transaction-empty" class="empty-inline hidden">还没有操作记录。</div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="adjust-dialog">
+    <form id="adjust-form" method="dialog" class="dialog-card">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">修改余额</p>
+          <h2 id="adjust-member-name">—</h2>
+        </div>
+        <button id="adjust-close-button" class="icon-button" type="button" aria-label="关闭">×</button>
+      </div>
+
+      <div class="current-balance-row">
+        <span>当前余额</span>
+        <strong id="adjust-current-balance">¥0.00</strong>
+      </div>
+
+      <label>
+        <span>变动金额</span>
+        <input id="adjust-amount" type="number" step="0.01" required inputmode="decimal" placeholder="例如：+100 或 -500">
+        <small>充值/增加输入正数，消费/扣减输入负数。</small>
+      </label>
+
+      <label>
+        <span>备注</span>
+        <input id="adjust-note" maxlength="200" placeholder="例如：8 月 11 日场地费">
+      </label>
+
+      <div class="dialog-actions">
+        <button id="adjust-cancel-button" class="ghost" type="button">取消</button>
+        <button id="adjust-submit-button" class="primary" type="submit">确认修改</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
