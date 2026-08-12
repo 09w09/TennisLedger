@@ -35,8 +35,21 @@
   };
 
   function showOnly(viewName) {
-    [views.setup, views.login, views.shareError, views.app].forEach((el) => el.classList.add("hidden"));
+    [views.setup, views.login, views.shareError, views.app]
+      .filter(Boolean)
+      .forEach((el) => el.classList.add("hidden"));
+    if (!views[viewName]) throw new Error("页面文件版本不一致，请重新部署全部网页文件。");
     views[viewName].classList.remove("hidden");
+  }
+
+  function setOptionalText(id, text) {
+    const element = $(id);
+    if (element) element.textContent = text;
+  }
+
+  function setOptionalHidden(id, hidden) {
+    const element = $(id);
+    if (element) element.classList.toggle("hidden", hidden);
   }
 
   function getShareTokenFromUrl() {
@@ -235,15 +248,16 @@
     document.querySelectorAll(".admin-only").forEach((element) => {
       element.classList.remove("hidden");
     });
-    $("account-role").textContent = "管理员";
-    $("account-role").classList.remove("readonly");
-    $("account-email").textContent = state.session.user.email || "已登录账号";
-    $("account-email").classList.remove("hidden");
-    $("logout-button").classList.remove("hidden");
-    $("shared-admin-button").classList.add("hidden");
-    $("ledger-list-title").textContent = "账本";
-    $("ledger-list-description").textContent = "创建不同账本，分别管理成员余额。";
-    $("ledger-empty-description").textContent = "在上方输入名称并创建第一个账本。";
+    setOptionalText("account-role", "管理员");
+    $("account-role")?.classList.remove("readonly");
+    setOptionalText("account-email", state.session.user.email || "已登录账号");
+    setOptionalText("admin-email", state.session.user.email || "已登录账号");
+    setOptionalHidden("account-email", false);
+    setOptionalHidden("logout-button", false);
+    setOptionalHidden("shared-admin-button", true);
+    setOptionalText("ledger-list-title", "账本");
+    setOptionalText("ledger-list-description", "创建不同账本，分别管理成员余额。");
+    setOptionalText("ledger-empty-description", "在上方输入名称并创建第一个账本。");
     setLoginError();
     showOnly("app");
     await showLedgerList();
@@ -277,11 +291,11 @@
     document.querySelectorAll(".admin-only").forEach((element) => {
       element.classList.add("hidden");
     });
-    $("account-role").textContent = "只读分享";
-    $("account-role").classList.add("readonly");
-    $("account-email").classList.add("hidden");
-    $("logout-button").classList.add("hidden");
-    $("shared-admin-button").classList.remove("hidden");
+    setOptionalText("account-role", "只读分享");
+    $("account-role")?.classList.add("readonly");
+    setOptionalHidden("account-email", true);
+    setOptionalHidden("logout-button", true);
+    setOptionalHidden("shared-admin-button", false);
     $("page-title").textContent = ledger.name;
     $("ledger-title").textContent = ledger.name;
     $("back-button").classList.add("hidden");
@@ -838,7 +852,7 @@
     $("add-member-form").addEventListener("submit", handleAddMember);
     $("delete-ledger-button").addEventListener("click", openDeleteDialog);
     $("copy-summary-button").addEventListener("click", handleCopySummary);
-    $("copy-share-link-button").addEventListener("click", handleCopyShareLink);
+    $("copy-share-link-button")?.addEventListener("click", handleCopyShareLink);
     $("load-more-transactions-button").addEventListener("click", handleLoadMoreTransactions);
     $("adjust-form").addEventListener("submit", handleAdjustBalance);
     $("adjust-amount").addEventListener("input", updateAdjustPreview);
@@ -847,15 +861,15 @@
     $("adjust-dialog").addEventListener("close", () => {
       state.adjustingMember = null;
     });
-    $("delete-form").addEventListener("submit", handleDeleteLedger);
-    $("delete-confirm-name").addEventListener("input", updateDeleteConfirmation);
-    $("delete-close-button").addEventListener("click", closeDeleteDialog);
-    $("delete-cancel-button").addEventListener("click", closeDeleteDialog);
-    $("delete-dialog").addEventListener("cancel", (event) => {
+    $("delete-form")?.addEventListener("submit", handleDeleteLedger);
+    $("delete-confirm-name")?.addEventListener("input", updateDeleteConfirmation);
+    $("delete-close-button")?.addEventListener("click", closeDeleteDialog);
+    $("delete-cancel-button")?.addEventListener("click", closeDeleteDialog);
+    $("delete-dialog")?.addEventListener("cancel", (event) => {
       if (state.detailMutationPending) event.preventDefault();
     });
-    $("shared-admin-button").addEventListener("click", showAdminLogin);
-    $("share-error-admin-button").addEventListener("click", showAdminLogin);
+    $("shared-admin-button")?.addEventListener("click", showAdminLogin);
+    $("share-error-admin-button")?.addEventListener("click", showAdminLogin);
   }
 
   async function init() {
