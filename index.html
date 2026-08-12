@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#111827">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self' https://*.supabase.co; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <title>TennisLedger · 共享账本</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -96,6 +97,8 @@
           </div>
         </div>
 
+        <div id="ledger-detail-status" class="empty-inline detail-status" role="status" aria-live="polite">正在加载账本数据…</div>
+
         <div class="panel">
           <div class="panel-heading">
             <div>
@@ -131,7 +134,7 @@
           <div class="panel-heading">
             <div>
               <h2>操作记录</h2>
-              <p class="muted">记录每次余额变化、修改前后数值和备注，最新记录在最上方。</p>
+              <p class="muted">记录每次余额变化、修改前后数值和备注，最新记录在最上方，每次加载 100 条。</p>
             </div>
           </div>
           <div class="table-wrap">
@@ -150,6 +153,7 @@
             </table>
           </div>
           <div id="transaction-empty" class="empty-inline hidden">还没有操作记录。</div>
+          <button id="load-more-transactions-button" class="ghost load-more hidden" type="button">加载更早记录</button>
         </div>
       </section>
     </section>
@@ -181,6 +185,11 @@
         <input id="adjust-note" maxlength="200" placeholder="例如：8 月 11 日场地费">
       </label>
 
+      <div class="adjust-preview" aria-live="polite">
+        <span>预计修改后</span>
+        <strong id="adjust-next-balance">—</strong>
+      </div>
+
       <div class="dialog-actions">
         <button id="adjust-cancel-button" class="ghost" type="button">取消</button>
         <button id="adjust-submit-button" class="primary" type="submit">确认修改</button>
@@ -188,7 +197,7 @@
     </form>
   </dialog>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.8"></script>
   <script src="./config.js"></script>
   <script src="./app.js"></script>
 </body>

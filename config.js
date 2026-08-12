@@ -2,6 +2,6 @@
 // 真正的数据访问权限由 Supabase Auth + PostgreSQL RLS 控制。
 // 绝对不要把 service_role / secret key 写进这个文件。
 window.TENNIS_LEDGER_CONFIG = {
-  supabaseUrl: "https://YOUR_PROJECT.supabase.co",
-  supabasePublishableKey: "YOUR_PUBLISHABLE_KEY"
+  supabaseUrl: "https://ekaomifzlplttwubmsbh.supabase.co",
+  supabasePublishableKey: "sb_publishable_DOmNChiKpW2UPnPQPurhyQ_SYbYg6oD"
 };
