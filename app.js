@@ -254,7 +254,6 @@
     setOptionalText("admin-email", state.session.user.email || "已登录账号");
     setOptionalHidden("account-email", false);
     setOptionalHidden("logout-button", false);
-    setOptionalHidden("shared-admin-button", true);
     setOptionalText("ledger-list-title", "账本");
     setOptionalText("ledger-list-description", "创建不同账本，分别管理成员余额。");
     setOptionalText("ledger-empty-description", "在上方输入名称并创建第一个账本。");
@@ -295,7 +294,6 @@
     $("account-role")?.classList.add("readonly");
     setOptionalHidden("account-email", true);
     setOptionalHidden("logout-button", true);
-    setOptionalHidden("shared-admin-button", false);
     $("page-title").textContent = ledger.name;
     $("ledger-title").textContent = ledger.name;
     $("back-button").classList.add("hidden");
@@ -678,6 +676,7 @@
     state.adjustingMember = member;
     $("adjust-member-name").textContent = member.name;
     $("adjust-current-balance").textContent = formatMoney(member.balance);
+    $("adjust-direction").value = "subtract";
     $("adjust-amount").value = "";
     $("adjust-note").value = "";
     updateAdjustPreview();
@@ -694,9 +693,10 @@
     const preview = $("adjust-next-balance");
     const container = preview.closest(".adjust-preview");
     const rawAmount = $("adjust-amount").value;
-    const amount = Number(rawAmount);
+    const magnitude = Number(rawAmount);
+    const amount = $("adjust-direction").value === "add" ? magnitude : -magnitude;
 
-    if (!state.adjustingMember || rawAmount === "" || !Number.isFinite(amount) || amount === 0) {
+    if (!state.adjustingMember || rawAmount === "" || !Number.isFinite(magnitude) || magnitude <= 0) {
       preview.textContent = "—";
       container.classList.remove("negative");
       return;
@@ -713,10 +713,11 @@
     if (!state.isAdmin || !member || !state.detailReady || state.detailMutationPending) return;
     const ledgerId = member.ledger_id;
 
-    const amount = Number($("adjust-amount").value);
+    const magnitude = Number($("adjust-amount").value);
+    const amount = $("adjust-direction").value === "add" ? magnitude : -magnitude;
     const note = $("adjust-note").value.trim();
-    if (!Number.isFinite(amount) || amount === 0) {
-      showToast("变动金额必须是非零数字。", "error");
+    if (!Number.isFinite(magnitude) || magnitude <= 0) {
+      showToast("金额必须是大于 0 的数字。", "error");
       return;
     }
 
@@ -855,6 +856,7 @@
     $("copy-share-link-button")?.addEventListener("click", handleCopyShareLink);
     $("load-more-transactions-button").addEventListener("click", handleLoadMoreTransactions);
     $("adjust-form").addEventListener("submit", handleAdjustBalance);
+    $("adjust-direction").addEventListener("change", updateAdjustPreview);
     $("adjust-amount").addEventListener("input", updateAdjustPreview);
     $("adjust-close-button").addEventListener("click", closeAdjustDialog);
     $("adjust-cancel-button").addEventListener("click", closeAdjustDialog);
@@ -868,7 +870,6 @@
     $("delete-dialog")?.addEventListener("cancel", (event) => {
       if (state.detailMutationPending) event.preventDefault();
     });
-    $("shared-admin-button")?.addEventListener("click", showAdminLogin);
     $("share-error-admin-button")?.addEventListener("click", showAdminLogin);
   }
 
