@@ -19,6 +19,8 @@
     detailReady: false,
     detailMutationPending: false,
     passwordMutationPending: false,
+    pendingMember: null,
+    deletingMember: null,
     ledgerListRequestId: 0,
     adjustingMember: null,
     toastTimer: null
@@ -186,6 +188,11 @@
     controls.forEach((button) => {
       if (button) button.disabled = disabled || button.dataset.busy === "true";
     });
+    const deleteMemberButton = $("delete-member-button");
+    if (state.isAdmin && deleteMemberButton) {
+      deleteMemberButton.disabled =
+        disabled || state.members.length === 0 || deleteMemberButton.dataset.busy === "true";
+    }
     $("member-list").querySelectorAll("button").forEach((button) => {
       button.disabled = disabled || button.dataset.busy === "true";
     });
@@ -215,6 +222,10 @@
     if (message.includes("duplicate key") && message.includes("ledgers_active_name_unique")) return "已经存在同名账本。";
     if (message.includes("duplicate key") && message.includes("members_ledger_id_name_key")) return "这个账本里已经存在同名用户。";
     if (message.includes("Only administrators")) return "当前账号没有管理员权限。";
+    if (message.includes("Initial balance cannot be negative")) return "初始余额不能小于 0。";
+    if (message.includes("Balance cannot be negative")) return "余额不能小于 0，扣减金额不能超过当前余额。";
+    if (message.includes("Member name confirmation does not match")) return "输入的用户姓名不匹配。";
+    if (message.includes("Member does not exist")) return "用户不存在或已经被删除。";
     return message;
   }
 
@@ -461,6 +472,8 @@
     state.detailReady = false;
     state.detailMutationPending = false;
     state.passwordMutationPending = false;
+    state.pendingMember = null;
+    state.deletingMember = null;
     setLoginError();
     showOnly("login");
   }
@@ -566,6 +579,7 @@
     state.members = [];
     state.transactions = [];
     state.transactionsHasMore = false;
+    state.deletingMember = null;
     setDetailStatus("正在加载账本数据…");
     $("member-name").value = "";
     $("member-balance").value = "0";
@@ -728,20 +742,63 @@
     }
   }
 
-  async function handleAddMember(event) {
+  function setAddMemberConfirmError(message = "") {
+    const error = $("add-member-confirm-error");
+    error.textContent = message;
+    error.classList.toggle("hidden", !message);
+  }
+
+  function openAddMemberConfirmation(event) {
     event.preventDefault();
     if (!state.isAdmin || !state.currentLedger || !state.detailReady || state.detailMutationPending) return;
 
-    const ledgerId = state.currentLedger.id;
-    const form = event.currentTarget;
-    const button = form.querySelector("button[type='submit']");
     const name = $("member-name").value.trim();
     const initialBalance = Number($("member-balance").value);
-
     if (!name || !Number.isFinite(initialBalance)) return;
+    if (initialBalance < 0) {
+      showToast("初始余额不能小于 0。", "error");
+      return;
+    }
+
+    state.pendingMember = {
+      ledgerId: state.currentLedger.id,
+      name,
+      initialBalance
+    };
+    $("confirm-member-name").textContent = name;
+    $("confirm-member-balance").textContent = formatMoney(initialBalance);
+    $("confirm-member-balance").classList.toggle("negative", initialBalance < 0);
+    setAddMemberConfirmError();
+    $("add-member-dialog").showModal();
+  }
+
+  function closeAddMemberConfirmation() {
+    if (state.detailMutationPending) return;
+    state.pendingMember = null;
+    setAddMemberConfirmError();
+    $("add-member-dialog").close();
+  }
+
+  async function handleAddMember(event) {
+    event.preventDefault();
+    const pendingMember = state.pendingMember;
+    if (
+      !state.isAdmin ||
+      !pendingMember ||
+      !state.currentLedger ||
+      pendingMember.ledgerId !== state.currentLedger.id ||
+      !state.detailReady ||
+      state.detailMutationPending
+    ) return;
+
+    const { ledgerId, name, initialBalance } = pendingMember;
+    const button = $("add-member-confirm-submit-button");
 
     setButtonBusy(button, true, "添加中…");
     setDetailMutationPending(true);
+    $("add-member-confirm-close-button").disabled = true;
+    $("add-member-confirm-cancel-button").disabled = true;
+    setAddMemberConfirmError();
     try {
       const { error } = await state.client.rpc("add_member", {
         p_ledger_id: ledgerId,
@@ -753,15 +810,19 @@
       if (state.currentLedger?.id === ledgerId) {
         $("member-name").value = "";
         $("member-balance").value = "0";
+        state.pendingMember = null;
+        $("add-member-dialog").close();
         const refreshed = await refreshLedgerDetail();
         if (state.currentLedger?.id === ledgerId && refreshed !== null) {
           showToast(refreshed ? "用户已添加。" : "用户已添加，但页面刷新失败，请勿重复提交，并重新进入账本。", refreshed ? "success" : "error");
         }
       }
     } catch (error) {
-      showToast(normalizeError(error), "error");
+      setAddMemberConfirmError(normalizeError(error));
     } finally {
       setButtonBusy(button, false);
+      $("add-member-confirm-close-button").disabled = false;
+      $("add-member-confirm-cancel-button").disabled = false;
       setDetailMutationPending(false);
     }
   }
@@ -787,19 +848,37 @@
   function updateAdjustPreview() {
     const preview = $("adjust-next-balance");
     const container = preview.closest(".adjust-preview");
-    const rawAmount = $("adjust-amount").value;
+    const amountInput = $("adjust-amount");
+    const submitButton = $("adjust-submit-button");
+    const rawAmount = amountInput.value;
     const magnitude = Number(rawAmount);
-    const amount = $("adjust-direction").value === "add" ? magnitude : -magnitude;
+    const isAddition = $("adjust-direction").value === "add";
+    const amount = isAddition ? magnitude : -magnitude;
+
+    if (isAddition || !state.adjustingMember) {
+      amountInput.removeAttribute("max");
+    } else {
+      amountInput.max = String(Math.max(Number(state.adjustingMember.balance), 0));
+    }
 
     if (!state.adjustingMember || rawAmount === "" || !Number.isFinite(magnitude) || magnitude <= 0) {
       preview.textContent = "—";
       container.classList.remove("negative");
+      submitButton.disabled = true;
       return;
     }
 
     const nextBalance = Number(state.adjustingMember.balance) + amount;
+    if (nextBalance < 0) {
+      preview.textContent = "无法保存：余额不能低于 ¥0.00";
+      container.classList.add("negative");
+      submitButton.disabled = true;
+      return;
+    }
+
     preview.textContent = `${formatMoney(nextBalance)}（${formatSignedAmount(amount)}）`;
-    container.classList.toggle("negative", nextBalance < 0);
+    container.classList.remove("negative");
+    submitButton.disabled = state.detailMutationPending || submitButton.dataset.busy === "true";
   }
 
   async function handleAdjustBalance(event) {
@@ -813,6 +892,11 @@
     const note = $("adjust-note").value.trim();
     if (!Number.isFinite(magnitude) || magnitude <= 0) {
       showToast("金额必须是大于 0 的数字。", "error");
+      return;
+    }
+    if (Number(member.balance) + amount < 0) {
+      showToast("余额不能小于 0，扣减金额不能超过当前余额。", "error");
+      updateAdjustPreview();
       return;
     }
 
@@ -842,6 +926,128 @@
     } finally {
       setButtonBusy(button, false);
       setDetailMutationPending(false);
+      if ($("adjust-dialog").open) updateAdjustPreview();
+    }
+  }
+
+  function setDeleteMemberError(message = "") {
+    const error = $("delete-member-error");
+    error.textContent = message;
+    error.classList.toggle("hidden", !message);
+  }
+
+  function getSelectedDeleteMember() {
+    const memberId = $("delete-member-select").value;
+    return state.members.find((member) => String(member.id) === memberId) || null;
+  }
+
+  function updateDeleteMemberConfirmation() {
+    const member = getSelectedDeleteMember();
+    const confirmInput = $("delete-member-confirm-name");
+    state.deletingMember = member;
+    $("delete-member-name").textContent = member?.name || "—";
+    $("delete-member-balance").textContent = member ? formatMoney(member.balance) : "—";
+    $("delete-member-balance").classList.toggle("negative", Number(member?.balance) < 0);
+    confirmInput.disabled = !member || state.detailMutationPending;
+    confirmInput.placeholder = member?.name || "请先选择用户";
+    $("delete-member-submit-button").disabled =
+      !member || confirmInput.value !== member.name || state.detailMutationPending;
+  }
+
+  function handleDeleteMemberSelection() {
+    $("delete-member-confirm-name").value = "";
+    setDeleteMemberError();
+    updateDeleteMemberConfirmation();
+    if (state.deletingMember) window.setTimeout(() => $("delete-member-confirm-name").focus(), 0);
+  }
+
+  function openDeleteMemberDialog() {
+    if (!state.isAdmin || !state.currentLedger || !state.detailReady || state.detailMutationPending) return;
+    if (state.members.length === 0) {
+      showToast("当前账本没有可删除的用户。", "error");
+      return;
+    }
+
+    const select = $("delete-member-select");
+    select.replaceChildren();
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "请选择用户";
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    select.append(placeholder);
+    state.members.forEach((member) => {
+      const option = document.createElement("option");
+      option.value = String(member.id);
+      option.textContent = `${member.name}（${formatMoney(member.balance)}）`;
+      select.append(option);
+    });
+
+    state.deletingMember = null;
+    $("delete-member-confirm-name").value = "";
+    setDeleteMemberError();
+    updateDeleteMemberConfirmation();
+    $("delete-member-dialog").showModal();
+    window.setTimeout(() => select.focus(), 0);
+  }
+
+  function closeDeleteMemberDialog() {
+    if (state.detailMutationPending) return;
+    state.deletingMember = null;
+    $("delete-member-form").reset();
+    setDeleteMemberError();
+    $("delete-member-dialog").close();
+  }
+
+  async function handleDeleteMember(event) {
+    event.preventDefault();
+    const member = getSelectedDeleteMember();
+    if (!state.isAdmin || !member || !state.currentLedger || !state.detailReady || state.detailMutationPending) return;
+    const ledgerId = state.currentLedger.id;
+    const confirmName = $("delete-member-confirm-name").value;
+    if (member.ledger_id !== ledgerId || confirmName !== member.name) {
+      setDeleteMemberError("请输入完整且完全一致的用户姓名。");
+      updateDeleteMemberConfirmation();
+      return;
+    }
+
+    const button = $("delete-member-submit-button");
+    setButtonBusy(button, true, "删除中…");
+    setDetailMutationPending(true);
+    $("delete-member-select").disabled = true;
+    $("delete-member-confirm-name").disabled = true;
+    $("delete-member-close-button").disabled = true;
+    $("delete-member-cancel-button").disabled = true;
+    setDeleteMemberError();
+    try {
+      const { error } = await state.client.rpc("delete_member", {
+        p_member_id: member.id,
+        p_confirm_name: confirmName
+      });
+      if (error) throw error;
+
+      if (state.currentLedger?.id === ledgerId) {
+        state.deletingMember = null;
+        $("delete-member-dialog").close();
+        const refreshed = await refreshLedgerDetail();
+        if (state.currentLedger?.id === ledgerId && refreshed !== null) {
+          showToast(
+            refreshed
+              ? `${member.name} 已删除，历史操作记录仍保留。`
+              : "用户已删除，但页面刷新失败，请勿重复提交，并重新进入账本。",
+            refreshed ? "success" : "error"
+          );
+        }
+      }
+    } catch (error) {
+      setDeleteMemberError(normalizeError(error));
+    } finally {
+      setButtonBusy(button, false);
+      $("delete-member-select").disabled = false;
+      $("delete-member-close-button").disabled = false;
+      $("delete-member-cancel-button").disabled = false;
+      setDetailMutationPending(false);
+      if ($("delete-member-dialog").open) updateDeleteMemberConfirmation();
     }
   }
 
@@ -958,8 +1164,43 @@
     });
     $("create-ledger-form").addEventListener("submit", handleCreateLedger);
     $("back-button").addEventListener("click", showLedgerList);
-    $("add-member-form").addEventListener("submit", handleAddMember);
+    $("add-member-form").addEventListener("submit", openAddMemberConfirmation);
+    $("add-member-confirm-form").addEventListener("submit", handleAddMember);
+    $("add-member-confirm-close-button").addEventListener("click", closeAddMemberConfirmation);
+    $("add-member-confirm-cancel-button").addEventListener("click", closeAddMemberConfirmation);
+    $("add-member-dialog").addEventListener("cancel", (event) => {
+      if (state.detailMutationPending) {
+        event.preventDefault();
+      } else {
+        state.pendingMember = null;
+      }
+    });
+    $("add-member-dialog").addEventListener("close", () => {
+      if (!state.detailMutationPending) {
+        state.pendingMember = null;
+        setAddMemberConfirmError();
+      }
+    });
     $("delete-ledger-button").addEventListener("click", openDeleteDialog);
+    $("delete-member-button").addEventListener("click", openDeleteMemberDialog);
+    $("delete-member-form").addEventListener("submit", handleDeleteMember);
+    $("delete-member-select").addEventListener("change", handleDeleteMemberSelection);
+    $("delete-member-confirm-name").addEventListener("input", () => {
+      setDeleteMemberError();
+      updateDeleteMemberConfirmation();
+    });
+    $("delete-member-close-button").addEventListener("click", closeDeleteMemberDialog);
+    $("delete-member-cancel-button").addEventListener("click", closeDeleteMemberDialog);
+    $("delete-member-dialog").addEventListener("cancel", (event) => {
+      if (state.detailMutationPending) event.preventDefault();
+    });
+    $("delete-member-dialog").addEventListener("close", () => {
+      if (!state.detailMutationPending) {
+        state.deletingMember = null;
+        $("delete-member-form").reset();
+        setDeleteMemberError();
+      }
+    });
     $("copy-summary-button").addEventListener("click", handleCopySummary);
     $("copy-share-link-button")?.addEventListener("click", handleCopyShareLink);
     $("load-more-transactions-button").addEventListener("click", handleLoadMoreTransactions);

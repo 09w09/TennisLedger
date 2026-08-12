@@ -293,7 +293,9 @@ td { font-variant-numeric: tabular-nums; }
 
 #adjust-dialog,
 #delete-dialog,
-#password-dialog {
+#delete-member-dialog,
+#password-dialog,
+#add-member-dialog {
   width: min(500px, calc(100% - 28px));
   max-height: calc(100dvh - 28px);
   overflow-y: auto;
@@ -304,7 +306,9 @@ td { font-variant-numeric: tabular-nums; }
 }
 #adjust-dialog::backdrop,
 #delete-dialog::backdrop,
-#password-dialog::backdrop { background: rgba(17, 24, 39, 0.45); }
+#delete-member-dialog::backdrop,
+#password-dialog::backdrop,
+#add-member-dialog::backdrop { background: rgba(17, 24, 39, 0.45); }
 .dialog-card { display: grid; gap: 18px; padding: 24px; }
 .dialog-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
 .icon-button { min-height: 34px; width: 34px; padding: 0; border-radius: 50%; color: #4b5563; background: #f3f4f6; font-size: 22px; }
@@ -336,6 +340,17 @@ td { font-variant-numeric: tabular-nums; }
   background: #fef2f2;
 }
 .delete-warning p { margin: 8px 0 0; font-size: 14px; }
+.confirm-summary {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+.confirm-summary > div { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.confirm-summary span { color: #6b7280; }
+.confirm-summary strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.confirm-summary strong.negative { color: #b91c1c; }
 
 .danger-zone {
   margin-top: 14px;

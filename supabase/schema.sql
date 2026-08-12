@@ -253,6 +253,10 @@ begin
     raise exception 'Initial balance must be a finite number';
   end if;
 
+  if v_balance < 0 then
+    raise exception 'Initial balance cannot be negative';
+  end if;
+
   -- Hold a shared row lock until the member and its initial transaction commit.
   -- A concurrent soft-delete must wait and cannot interleave with this write.
   perform 1
@@ -357,6 +361,10 @@ begin
 
   v_after := v_before + v_amount;
 
+  if v_after < 0 then
+    raise exception 'Balance cannot be negative';
+  end if;
+
   update public.members
   set balance = v_after
   where id = p_member_id;
@@ -382,6 +390,70 @@ begin
   );
 
   return v_after;
+end;
+$$;
+
+create or replace function public.delete_member(
+  p_member_id bigint,
+  p_confirm_name text
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_ledger_id bigint;
+  v_member_name text;
+begin
+  if not private.is_admin() then
+    raise exception 'Only administrators can perform this operation';
+  end if;
+
+  -- Follow the same ledger -> member lock order as balance adjustments so a
+  -- concurrent adjustment cannot interleave with deletion.
+  select m.ledger_id
+  into v_ledger_id
+  from public.members as m
+  where m.id = p_member_id;
+
+  if not found then
+    raise exception 'Member does not exist';
+  end if;
+
+  perform 1
+  from public.ledgers
+  where id = v_ledger_id
+    and deleted_at is null
+  for share;
+
+  if not found then
+    raise exception 'Ledger does not exist';
+  end if;
+
+  select m.name
+  into v_member_name
+  from public.members as m
+  where m.id = p_member_id
+    and m.ledger_id = v_ledger_id
+  for update;
+
+  if not found then
+    raise exception 'Member does not exist';
+  end if;
+
+  if p_confirm_name is distinct from v_member_name then
+    raise exception 'Member name confirmation does not match';
+  end if;
+
+  -- Preserve history and its copied member_name, while releasing the foreign
+  -- key reference so the current member row can be removed.
+  update public.transactions
+  set member_id = null
+  where member_id = p_member_id;
+
+  delete from public.members
+  where id = p_member_id;
 end;
 $$;
 
@@ -470,12 +542,14 @@ revoke execute on function public.create_ledger(text) from public, anon, authent
 revoke execute on function public.delete_ledger(bigint) from public, anon, authenticated;
 revoke execute on function public.add_member(bigint, text, numeric) from public, anon, authenticated;
 revoke execute on function public.adjust_balance(bigint, numeric, text) from public, anon, authenticated;
+revoke execute on function public.delete_member(bigint, text) from public, anon, authenticated;
 revoke execute on function public.get_shared_ledger(uuid) from public, anon, authenticated;
 
 grant execute on function public.create_ledger(text) to authenticated;
 grant execute on function public.delete_ledger(bigint) to authenticated;
 grant execute on function public.add_member(bigint, text, numeric) to authenticated;
 grant execute on function public.adjust_balance(bigint, numeric, text) to authenticated;
+grant execute on function public.delete_member(bigint, text) to authenticated;
 grant execute on function public.get_shared_ledger(uuid) to anon, authenticated;
 
 commit;
