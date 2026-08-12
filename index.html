@@ -9,7 +9,7 @@
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self' https://*.supabase.co; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <title>TennisLedger · 共享账本</title>
-  <link rel="stylesheet" href="./styles.css?v=20260812-4">
+  <link rel="stylesheet" href="./styles.css?v=20260812-5">
 </head>
 <body>
   <main class="shell">
@@ -62,6 +62,7 @@
         <div class="topbar-actions">
           <span id="account-role" class="role-badge"></span>
           <span id="account-email" class="account-email"></span>
+          <button id="change-password-button" class="ghost admin-only" type="button">修改密码</button>
           <button id="logout-button" class="ghost" type="button">退出</button>
         </div>
       </header>
@@ -109,26 +110,6 @@
 
         <div id="ledger-detail-status" class="empty-inline detail-status" role="status" aria-live="polite">正在加载账本数据…</div>
 
-        <div class="panel admin-only">
-          <div class="panel-heading">
-            <div>
-              <h2>添加用户</h2>
-              <p class="muted">初始余额会自动记入第一条操作记录。</p>
-            </div>
-          </div>
-          <form id="add-member-form" class="member-add-form">
-            <label>
-              <span>姓名</span>
-              <input id="member-name" maxlength="60" required placeholder="例如：兵">
-            </label>
-            <label>
-              <span>初始余额</span>
-              <input id="member-balance" type="number" step="0.01" value="0" required inputmode="decimal">
-            </label>
-            <button class="primary" type="submit">添加用户</button>
-          </form>
-        </div>
-
         <div class="panel">
           <div class="panel-heading">
             <div>
@@ -164,6 +145,26 @@
           </div>
           <div id="transaction-empty" class="empty-inline hidden">还没有操作记录。</div>
           <button id="load-more-transactions-button" class="ghost load-more hidden" type="button">加载更早记录</button>
+        </div>
+
+        <div class="panel admin-only">
+          <div class="panel-heading">
+            <div>
+              <h2>添加用户</h2>
+              <p class="muted">初始余额会自动记入第一条操作记录。</p>
+            </div>
+          </div>
+          <form id="add-member-form" class="member-add-form">
+            <label>
+              <span>姓名</span>
+              <input id="member-name" maxlength="60" required placeholder="例如：兵">
+            </label>
+            <label>
+              <span>初始余额</span>
+              <input id="member-balance" type="number" step="0.01" value="0" required inputmode="decimal">
+            </label>
+            <button class="primary" type="submit">添加用户</button>
+          </form>
         </div>
 
         <details class="danger-zone admin-only">
@@ -255,8 +256,43 @@
     </form>
   </dialog>
 
+  <dialog id="password-dialog">
+    <form id="password-form" class="dialog-card">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">账号安全</p>
+          <h2>修改管理员密码</h2>
+        </div>
+        <button id="password-close-button" class="icon-button" type="button" aria-label="关闭">×</button>
+      </div>
+
+      <label>
+        <span>当前密码</span>
+        <input id="current-password" type="password" autocomplete="current-password" required>
+      </label>
+
+      <label>
+        <span>新密码</span>
+        <input id="new-password" type="password" autocomplete="new-password" minlength="12" required>
+        <small>至少 12 位，建议使用密码管理器生成并保存。</small>
+      </label>
+
+      <label>
+        <span>确认新密码</span>
+        <input id="confirm-password" type="password" autocomplete="new-password" minlength="12" required>
+      </label>
+
+      <p id="password-error" class="form-error hidden" role="alert"></p>
+
+      <div class="dialog-actions">
+        <button id="password-cancel-button" class="ghost" type="button">取消</button>
+        <button id="password-submit-button" class="primary" type="submit">确认修改</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.8"></script>
   <script src="./config.js"></script>
-  <script src="./app.js?v=20260812-4"></script>
+  <script src="./app.js?v=20260812-5"></script>
 </body>
 </html>

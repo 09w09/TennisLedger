@@ -18,6 +18,7 @@
     detailRequestId: 0,
     detailReady: false,
     detailMutationPending: false,
+    passwordMutationPending: false,
     ledgerListRequestId: 0,
     adjustingMember: null,
     toastTimer: null
@@ -193,7 +194,8 @@
   function setDetailMutationPending(pending) {
     state.detailMutationPending = pending;
     $("back-button").disabled = pending;
-    $("logout-button").disabled = pending;
+    $("logout-button").disabled = pending || state.passwordMutationPending;
+    $("change-password-button").disabled = pending || state.passwordMutationPending;
     syncDetailControls();
   }
 
@@ -354,6 +356,98 @@
     }
   }
 
+  function setPasswordError(message = "") {
+    const error = $("password-error");
+    error.textContent = message;
+    error.classList.toggle("hidden", !message);
+  }
+
+  function setPasswordMutationPending(pending) {
+    state.passwordMutationPending = pending;
+    $("change-password-button").disabled = pending || state.detailMutationPending;
+    $("logout-button").disabled = pending || state.detailMutationPending;
+    $("password-close-button").disabled = pending;
+    $("password-cancel-button").disabled = pending;
+    $("current-password").disabled = pending;
+    $("new-password").disabled = pending;
+    $("confirm-password").disabled = pending;
+  }
+
+  function openPasswordDialog() {
+    if (!state.isAdmin || state.passwordMutationPending || state.detailMutationPending) return;
+    $("password-form").reset();
+    setPasswordError();
+    $("password-dialog").showModal();
+    window.setTimeout(() => $("current-password").focus(), 0);
+  }
+
+  function closePasswordDialog() {
+    if (state.passwordMutationPending) return;
+    $("password-form").reset();
+    setPasswordError();
+    $("password-dialog").close();
+  }
+
+  async function handlePasswordChange(event) {
+    event.preventDefault();
+    if (!state.isAdmin || state.passwordMutationPending || state.detailMutationPending) return;
+
+    const email = state.session?.user?.email;
+    const currentPassword = $("current-password").value;
+    const newPassword = $("new-password").value;
+    const confirmPassword = $("confirm-password").value;
+    setPasswordError();
+
+    if (!email || !currentPassword) {
+      setPasswordError("请输入当前密码。");
+      return;
+    }
+    if (newPassword.length < 12) {
+      setPasswordError("新密码至少需要 12 位。");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("两次输入的新密码不一致。");
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setPasswordError("新密码不能与当前密码相同。");
+      return;
+    }
+
+    const button = $("password-submit-button");
+    setButtonBusy(button, true, "修改中…");
+    setPasswordMutationPending(true);
+    try {
+      const { data: loginData, error: loginError } = await state.client.auth.signInWithPassword({
+        email,
+        password: currentPassword
+      });
+      if (loginError) {
+        if (loginError.message?.includes("Invalid login credentials")) {
+          setPasswordError("当前密码不正确。");
+          return;
+        }
+        throw loginError;
+      }
+
+      state.session = loginData.session;
+      const { error: updateError } = await state.client.auth.updateUser({
+        password: newPassword
+      });
+      if (updateError) throw updateError;
+
+      $("password-form").reset();
+      $("password-dialog").close();
+      showToast("密码已修改。下次登录请使用新密码。", "success");
+    } catch (error) {
+      setPasswordError(normalizeError(error));
+    } finally {
+      setButtonBusy(button, false);
+      setPasswordMutationPending(false);
+    }
+  }
+
   async function handleLogout() {
     await state.client.auth.signOut();
     state.session = null;
@@ -366,6 +460,7 @@
     state.detailRequestId += 1;
     state.detailReady = false;
     state.detailMutationPending = false;
+    state.passwordMutationPending = false;
     setLoginError();
     showOnly("login");
   }
@@ -848,6 +943,19 @@
   function bindEvents() {
     $("login-form").addEventListener("submit", handleLogin);
     $("logout-button").addEventListener("click", handleLogout);
+    $("change-password-button").addEventListener("click", openPasswordDialog);
+    $("password-form").addEventListener("submit", handlePasswordChange);
+    $("password-close-button").addEventListener("click", closePasswordDialog);
+    $("password-cancel-button").addEventListener("click", closePasswordDialog);
+    $("password-dialog").addEventListener("cancel", (event) => {
+      if (state.passwordMutationPending) event.preventDefault();
+    });
+    $("password-dialog").addEventListener("close", () => {
+      if (!state.passwordMutationPending) {
+        $("password-form").reset();
+        setPasswordError();
+      }
+    });
     $("create-ledger-form").addEventListener("submit", handleCreateLedger);
     $("back-button").addEventListener("click", showLedgerList);
     $("add-member-form").addEventListener("submit", handleAddMember);
