@@ -5,7 +5,8 @@
 --   * anon: no ledger data access
 --   * authenticated non-admin: can only check whether their own UID exists in admins
 --   * authenticated admin: can read/write ledger data
---   * transaction rows are append-only from the client side
+--   * clients can read tables, but every write must go through a controlled RPC
+--   * balance updates and transaction rows are committed atomically
 
 begin;
 
@@ -53,11 +54,34 @@ create table if not exists public.transactions (
   balance_after numeric(14, 2) not null,
   note text check (note is null or char_length(note) <= 200),
   operator_id uuid not null references auth.users(id),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint transactions_balance_math_check
+    check (balance_after = balance_before + amount)
 );
+
+-- `create table if not exists` does not add new constraints to an older install.
+-- Keep this migration block so re-running the file also upgrades that install.
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'transactions_balance_math_check'
+      and conrelid = 'public.transactions'::regclass
+  ) then
+    alter table public.transactions
+      add constraint transactions_balance_math_check
+      check (balance_after = balance_before + amount)
+      not valid;
+  end if;
+end;
+$$;
 
 create index if not exists transactions_ledger_created_idx
   on public.transactions (ledger_id, created_at desc);
+
+create index if not exists transactions_ledger_id_desc_idx
+  on public.transactions (ledger_id, id desc);
 
 -- ============================================================
 -- Admin helper used by RLS.
@@ -78,7 +102,8 @@ as $$
   );
 $$;
 
-revoke all on function private.is_admin() from public;
+revoke all on schema private from public, anon, authenticated;
+revoke all on function private.is_admin() from public, anon, authenticated;
 grant usage on schema private to authenticated;
 grant execute on function private.is_admin() to authenticated;
 
@@ -106,20 +131,10 @@ for select
 to authenticated
 using ((select private.is_admin()));
 
+-- No INSERT/UPDATE/DELETE policies are created. Browser writes are deliberately
+-- limited to the SECURITY DEFINER RPC functions below.
 drop policy if exists "admins can insert ledgers" on public.ledgers;
-create policy "admins can insert ledgers"
-on public.ledgers
-for insert
-to authenticated
-with check ((select private.is_admin()));
-
 drop policy if exists "admins can update ledgers" on public.ledgers;
-create policy "admins can update ledgers"
-on public.ledgers
-for update
-to authenticated
-using ((select private.is_admin()))
-with check ((select private.is_admin()));
 
 drop policy if exists "admins can read members" on public.members;
 create policy "admins can read members"
@@ -129,19 +144,7 @@ to authenticated
 using ((select private.is_admin()));
 
 drop policy if exists "admins can insert members" on public.members;
-create policy "admins can insert members"
-on public.members
-for insert
-to authenticated
-with check ((select private.is_admin()));
-
 drop policy if exists "admins can update members" on public.members;
-create policy "admins can update members"
-on public.members
-for update
-to authenticated
-using ((select private.is_admin()))
-with check ((select private.is_admin()));
 
 drop policy if exists "admins can read transactions" on public.transactions;
 create policy "admins can read transactions"
@@ -151,25 +154,19 @@ to authenticated
 using ((select private.is_admin()));
 
 drop policy if exists "admins can insert transactions" on public.transactions;
-create policy "admins can insert transactions"
-on public.transactions
-for insert
-to authenticated
-with check (
-  (select private.is_admin())
-  and operator_id = (select auth.uid())
-);
 
 -- ============================================================
 -- RPC functions
--- SECURITY INVOKER is intentional: all writes still pass through RLS.
--- Each RPC call runs in one PostgreSQL transaction.
+-- SECURITY DEFINER is intentional: browser roles have no direct table-write
+-- privileges, so these narrowly scoped functions are the only write path.
+-- Every function checks private.is_admin(), fixes search_path, and each call runs
+-- in one PostgreSQL transaction.
 -- ============================================================
 
 create or replace function public.create_ledger(p_name text)
 returns bigint
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 declare
@@ -195,7 +192,7 @@ $$;
 create or replace function public.delete_ledger(p_ledger_id bigint)
 returns void
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 begin
@@ -221,7 +218,7 @@ create or replace function public.add_member(
 )
 returns bigint
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 declare
@@ -237,12 +234,19 @@ begin
     raise exception 'Member name must be between 1 and 60 characters';
   end if;
 
-  if not exists (
-    select 1
-    from public.ledgers
-    where id = p_ledger_id
-      and deleted_at is null
-  ) then
+  if v_balance = 'NaN'::numeric then
+    raise exception 'Initial balance must be a finite number';
+  end if;
+
+  -- Hold a shared row lock until the member and its initial transaction commit.
+  -- A concurrent soft-delete must wait and cannot interleave with this write.
+  perform 1
+  from public.ledgers
+  where id = p_ledger_id
+    and deleted_at is null
+  for share;
+
+  if not found then
     raise exception 'Ledger does not exist';
   end if;
 
@@ -281,7 +285,7 @@ create or replace function public.adjust_balance(
 )
 returns numeric
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 declare
@@ -296,7 +300,7 @@ begin
     raise exception 'Only administrators can perform this operation';
   end if;
 
-  if v_amount is null or v_amount = 0 then
+  if v_amount is null or v_amount = 0 or v_amount = 'NaN'::numeric then
     raise exception 'Amount must be a non-zero number';
   end if;
 
@@ -304,13 +308,33 @@ begin
     raise exception 'Note must be 200 characters or fewer';
   end if;
 
-  select m.ledger_id, m.name, m.balance
-  into v_ledger_id, v_member_name, v_before
+  -- Discover the parent first, then always lock ledger -> member. The shared
+  -- ledger lock prevents a concurrent soft-delete while this operation commits.
+  select m.ledger_id
+  into v_ledger_id
   from public.members as m
-  join public.ledgers as l on l.id = m.ledger_id
+  where m.id = p_member_id;
+
+  if not found then
+    raise exception 'Member does not exist';
+  end if;
+
+  perform 1
+  from public.ledgers
+  where id = v_ledger_id
+    and deleted_at is null
+  for share;
+
+  if not found then
+    raise exception 'Ledger does not exist';
+  end if;
+
+  select m.name, m.balance
+  into v_member_name, v_before
+  from public.members as m
   where m.id = p_member_id
-    and l.deleted_at is null
-  for update of m;
+    and m.ledger_id = v_ledger_id
+  for update;
 
   if not found then
     raise exception 'Member does not exist';
@@ -347,30 +371,33 @@ end;
 $$;
 
 -- ============================================================
--- Data API privileges (RLS still decides which rows are allowed)
+-- Data API privileges
 -- ============================================================
 
-revoke all on table public.admins from anon, authenticated;
-revoke all on table public.ledgers from anon, authenticated;
-revoke all on table public.members from anon, authenticated;
-revoke all on table public.transactions from anon, authenticated;
+revoke all on table public.admins from public, anon, authenticated;
+revoke all on table public.ledgers from public, anon, authenticated;
+revoke all on table public.members from public, anon, authenticated;
+revoke all on table public.transactions from public, anon, authenticated;
 
 -- A signed-in user can only see their own row because of the admins RLS policy.
 grant select on table public.admins to authenticated;
 
--- These permissions are needed by SECURITY INVOKER RPC functions and reads.
--- RLS blocks every non-admin account from ledger data.
-grant select, insert, update on table public.ledgers to authenticated;
-grant select, insert, update on table public.members to authenticated;
-grant select, insert on table public.transactions to authenticated;
+-- RLS blocks every non-admin account from these reads. No browser role receives
+-- INSERT/UPDATE/DELETE: writes can only happen inside the RPC functions below.
+grant select on table public.ledgers to authenticated;
+grant select on table public.members to authenticated;
+grant select on table public.transactions to authenticated;
 
--- Identity columns use PostgreSQL sequences. SECURITY INVOKER RPCs need sequence usage.
-grant usage, select on all sequences in schema public to authenticated;
+revoke all on sequence
+  public.ledgers_id_seq,
+  public.members_id_seq,
+  public.transactions_id_seq
+from public, anon, authenticated;
 
-revoke execute on function public.create_ledger(text) from public, anon;
-revoke execute on function public.delete_ledger(bigint) from public, anon;
-revoke execute on function public.add_member(bigint, text, numeric) from public, anon;
-revoke execute on function public.adjust_balance(bigint, numeric, text) from public, anon;
+revoke execute on function public.create_ledger(text) from public, anon, authenticated;
+revoke execute on function public.delete_ledger(bigint) from public, anon, authenticated;
+revoke execute on function public.add_member(bigint, text, numeric) from public, anon, authenticated;
+revoke execute on function public.adjust_balance(bigint, numeric, text) from public, anon, authenticated;
 
 grant execute on function public.create_ledger(text) to authenticated;
 grant execute on function public.delete_ledger(bigint) to authenticated;
@@ -378,6 +405,13 @@ grant execute on function public.add_member(bigint, text, numeric) to authentica
 grant execute on function public.adjust_balance(bigint, numeric, text) to authenticated;
 
 commit;
+
+-- Existing installs receive the balance-math constraint as NOT VALID so old,
+-- manually edited history cannot roll back the security upgrade above. After
+-- auditing/fixing legacy rows, validate it separately with:
+--
+-- alter table public.transactions
+--   validate constraint transactions_balance_math_check;
 
 -- ============================================================
 -- AFTER running this schema:
