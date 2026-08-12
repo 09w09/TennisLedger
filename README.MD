@@ -303,7 +303,7 @@ config.js
 https://09w09.github.io/TennisLedger/
 ```
 
-第一次发布或后续更新最多可能需要约 10 分钟。部署进度可以在仓库顶部的 **Actions** 页面查看，任务名称通常是 `pages build and deployment`。
+第一次发布或后续更新建议预留最多约 30 分钟。部署进度可以在仓库顶部的 **Actions** 页面查看，任务名称通常是 `pages build and deployment`。
 
 #### 7A-3. 以后更新网站
 
@@ -313,7 +313,16 @@ https://09w09.github.io/TennisLedger/
 - 用 **Add file -> Upload files** 上传并覆盖文件；或
 - 在电脑上使用 Git 提交并推送。
 
-GitHub Pages 检测到新提交后会自动重新部署。Actions 显示绿色成功标记后，回到网站强制刷新浏览器即可看到新版。
+每次发布前，还要在 `index.html` 中把所有本地静态文件的 `?v=` 参数同步改成同一个新版本号。例如当前版本是 `20260812-17`，下一次可以改成 `20260813-1`。需要同步修改下面 4 个引用：
+
+```text
+styles.css?v=版本号
+config.js?v=版本号
+app.js?v=版本号
+ui.js?v=版本号
+```
+
+这个版本号只影响网页内部加载的文件，不会改变首页地址或已有的账本分享链接。GitHub Pages 检测到新提交后会自动重新部署；Actions 显示绿色成功标记后，等待缓存自然更新即可，通常不需要查看者清理微信缓存。
 
 ### 方案 B：Cloudflare Pages（拖放上传）
 
@@ -555,7 +564,7 @@ CSV 只是便于人工查看的应急副本，不是一键恢复包，也不包�
 2. **Settings -> Pages** 仍选择了正确的分支和 `/(root)`。
 3. 该分支根目录直接包含全小写的 `index.html`。
 4. 打开仓库 **Actions**，检查最新的 `pages build and deployment` 是否成功。
-5. 等待最多约 10 分钟，然后强制刷新浏览器。
+5. 等待最多约 30 分钟，然后重新打开页面。
 6. 确认打开的是 `https://<用户名>.github.io/<仓库名>/`，而不是 `github.com` 的代码仓库地址。
 
 如果首页正常但样式或按钮失效，检查 `styles.css`、`app.js` 和 `config.js` 是否也位于仓库根目录，并确认文件名大小写完全一致。
