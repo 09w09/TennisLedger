@@ -180,6 +180,7 @@
     const controls = [$("copy-summary-button"), $("load-more-transactions-button")];
     if (state.isAdmin) {
       controls.push(
+        $("rename-ledger-button"),
         $("delete-ledger-button"),
         $("copy-share-link-button"),
         $("add-member-form").querySelector("button[type='submit']")
@@ -222,6 +223,8 @@
     if (message.includes("duplicate key") && message.includes("ledgers_active_name_unique")) return "已经存在同名账本。";
     if (message.includes("duplicate key") && message.includes("members_ledger_id_name_key")) return "这个账本里已经存在同名用户。";
     if (message.includes("Only administrators")) return "当前账号没有管理员权限。";
+    if (message.includes("Ledger name must be between")) return "账本名称必须是 1 到 60 个字符。";
+    if (message.includes("Ledger does not exist")) return "账本不存在或已经被删除。";
     if (message.includes("Initial balance cannot be negative")) return "初始余额不能小于 0。";
     if (message.includes("Balance cannot be negative")) return "余额不能小于 0，扣减金额不能超过当前余额。";
     if (message.includes("Member name confirmation does not match")) return "输入的用户姓名不匹配。";
@@ -571,6 +574,88 @@
       showToast(normalizeError(error), "error");
     } finally {
       setButtonBusy(button, false);
+    }
+  }
+
+  function setRenameLedgerError(message = "") {
+    const error = $("rename-ledger-error");
+    error.textContent = message;
+    error.classList.toggle("hidden", !message);
+  }
+
+  function updateRenameLedgerConfirmation() {
+    const newName = $("rename-ledger-name").value.trim();
+    $("rename-ledger-submit-button").disabled =
+      !state.currentLedger ||
+      !newName ||
+      newName.length > 60 ||
+      newName === state.currentLedger.name ||
+      state.detailMutationPending;
+  }
+
+  function openRenameLedgerDialog() {
+    if (!state.isAdmin || !state.currentLedger || !state.detailReady || state.detailMutationPending) return;
+    $("rename-ledger-current-name").textContent = state.currentLedger.name;
+    $("rename-ledger-name").value = state.currentLedger.name;
+    setRenameLedgerError();
+    updateRenameLedgerConfirmation();
+    $("rename-ledger-dialog").showModal();
+    window.setTimeout(() => $("rename-ledger-name").select(), 0);
+  }
+
+  function closeRenameLedgerDialog() {
+    if (state.detailMutationPending) return;
+    $("rename-ledger-form").reset();
+    setRenameLedgerError();
+    $("rename-ledger-dialog").close();
+  }
+
+  async function handleRenameLedger(event) {
+    event.preventDefault();
+    if (!state.isAdmin || !state.currentLedger || !state.detailReady || state.detailMutationPending) return;
+    const ledgerId = state.currentLedger.id;
+    const newName = $("rename-ledger-name").value.trim();
+    if (!newName || newName.length > 60) {
+      setRenameLedgerError("账本名称必须是 1 到 60 个字符。");
+      return;
+    }
+    if (newName === state.currentLedger.name) {
+      setRenameLedgerError("新名称与当前名称相同。");
+      updateRenameLedgerConfirmation();
+      return;
+    }
+
+    const button = $("rename-ledger-submit-button");
+    setButtonBusy(button, true, "修改中…");
+    setDetailMutationPending(true);
+    $("rename-ledger-name").disabled = true;
+    $("rename-ledger-close-button").disabled = true;
+    $("rename-ledger-cancel-button").disabled = true;
+    setRenameLedgerError();
+    try {
+      const { data, error } = await state.client.rpc("rename_ledger", {
+        p_ledger_id: ledgerId,
+        p_name: newName
+      });
+      if (error) throw error;
+
+      if (state.currentLedger?.id === ledgerId) {
+        const savedName = data || newName;
+        state.currentLedger.name = savedName;
+        $("page-title").textContent = savedName;
+        $("ledger-title").textContent = savedName;
+        $("rename-ledger-dialog").close();
+        showToast("账本名称已修改。现有只读链接仍然有效。", "success");
+      }
+    } catch (error) {
+      setRenameLedgerError(normalizeError(error));
+    } finally {
+      setButtonBusy(button, false);
+      $("rename-ledger-name").disabled = false;
+      $("rename-ledger-close-button").disabled = false;
+      $("rename-ledger-cancel-button").disabled = false;
+      setDetailMutationPending(false);
+      if ($("rename-ledger-dialog").open) updateRenameLedgerConfirmation();
     }
   }
 
@@ -1164,6 +1249,23 @@
     });
     $("create-ledger-form").addEventListener("submit", handleCreateLedger);
     $("back-button").addEventListener("click", showLedgerList);
+    $("rename-ledger-button").addEventListener("click", openRenameLedgerDialog);
+    $("rename-ledger-form").addEventListener("submit", handleRenameLedger);
+    $("rename-ledger-name").addEventListener("input", () => {
+      setRenameLedgerError();
+      updateRenameLedgerConfirmation();
+    });
+    $("rename-ledger-close-button").addEventListener("click", closeRenameLedgerDialog);
+    $("rename-ledger-cancel-button").addEventListener("click", closeRenameLedgerDialog);
+    $("rename-ledger-dialog").addEventListener("cancel", (event) => {
+      if (state.detailMutationPending) event.preventDefault();
+    });
+    $("rename-ledger-dialog").addEventListener("close", () => {
+      if (!state.detailMutationPending) {
+        $("rename-ledger-form").reset();
+        setRenameLedgerError();
+      }
+    });
     $("add-member-form").addEventListener("submit", openAddMemberConfirmation);
     $("add-member-confirm-form").addEventListener("submit", handleAddMember);
     $("add-member-confirm-close-button").addEventListener("click", closeAddMemberConfirmation);

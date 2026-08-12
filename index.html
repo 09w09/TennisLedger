@@ -9,7 +9,7 @@
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self' https://*.supabase.co; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <title>TennisLedger · 共享账本</title>
-  <link rel="stylesheet" href="./styles.css?v=20260812-8">
+  <link rel="stylesheet" href="./styles.css?v=20260812-9">
 </head>
 <body>
   <main class="shell">
@@ -92,6 +92,7 @@
         <div class="detail-nav">
           <button id="back-button" class="ghost" type="button">← 返回账本列表</button>
           <div class="detail-nav-actions">
+            <button id="rename-ledger-button" class="ghost admin-only" type="button">修改账本名称</button>
             <button id="copy-summary-button" class="ghost" type="button">复制汇总</button>
             <button id="copy-share-link-button" class="ghost admin-only" type="button">复制只读链接</button>
           </div>
@@ -236,6 +237,36 @@
     </form>
   </dialog>
 
+  <dialog id="rename-ledger-dialog">
+    <form id="rename-ledger-form" class="dialog-card">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">账本设置</p>
+          <h2>修改账本名称</h2>
+        </div>
+        <button id="rename-ledger-close-button" class="icon-button" type="button" aria-label="关闭">×</button>
+      </div>
+
+      <div class="current-balance-row">
+        <span>当前名称</span>
+        <strong id="rename-ledger-current-name">—</strong>
+      </div>
+
+      <label>
+        <span>新名称</span>
+        <input id="rename-ledger-name" maxlength="60" autocomplete="off" required>
+        <small>改名不会影响成员、余额、历史记录或现有只读链接。</small>
+      </label>
+
+      <p id="rename-ledger-error" class="form-error hidden" role="alert"></p>
+
+      <div class="dialog-actions">
+        <button id="rename-ledger-cancel-button" class="ghost" type="button">取消</button>
+        <button id="rename-ledger-submit-button" class="primary" type="submit" disabled>确认修改</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="delete-dialog">
     <form id="delete-form" class="dialog-card">
       <div class="dialog-heading">
@@ -376,6 +407,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.8"></script>
   <script src="./config.js"></script>
-  <script src="./app.js?v=20260812-8"></script>
+  <script src="./app.js?v=20260812-9"></script>
 </body>
 </html>

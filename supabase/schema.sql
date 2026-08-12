@@ -226,6 +226,40 @@ begin
 end;
 $$;
 
+create or replace function public.rename_ledger(
+  p_ledger_id bigint,
+  p_name text
+)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_name text := trim(p_name);
+begin
+  if not private.is_admin() then
+    raise exception 'Only administrators can perform this operation';
+  end if;
+
+  if v_name is null or char_length(v_name) = 0 or char_length(v_name) > 60 then
+    raise exception 'Ledger name must be between 1 and 60 characters';
+  end if;
+
+  update public.ledgers
+  set name = v_name
+  where id = p_ledger_id
+    and deleted_at is null
+  returning name into v_name;
+
+  if not found then
+    raise exception 'Ledger does not exist';
+  end if;
+
+  return v_name;
+end;
+$$;
+
 create or replace function public.add_member(
   p_ledger_id bigint,
   p_name text,
@@ -540,6 +574,7 @@ from public, anon, authenticated;
 
 revoke execute on function public.create_ledger(text) from public, anon, authenticated;
 revoke execute on function public.delete_ledger(bigint) from public, anon, authenticated;
+revoke execute on function public.rename_ledger(bigint, text) from public, anon, authenticated;
 revoke execute on function public.add_member(bigint, text, numeric) from public, anon, authenticated;
 revoke execute on function public.adjust_balance(bigint, numeric, text) from public, anon, authenticated;
 revoke execute on function public.delete_member(bigint, text) from public, anon, authenticated;
@@ -547,6 +582,7 @@ revoke execute on function public.get_shared_ledger(uuid) from public, anon, aut
 
 grant execute on function public.create_ledger(text) to authenticated;
 grant execute on function public.delete_ledger(bigint) to authenticated;
+grant execute on function public.rename_ledger(bigint, text) to authenticated;
 grant execute on function public.add_member(bigint, text, numeric) to authenticated;
 grant execute on function public.adjust_balance(bigint, numeric, text) to authenticated;
 grant execute on function public.delete_member(bigint, text) to authenticated;

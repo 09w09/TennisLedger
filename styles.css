@@ -292,6 +292,7 @@ td { font-variant-numeric: tabular-nums; }
 .note-cell { max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
 
 #adjust-dialog,
+#rename-ledger-dialog,
 #delete-dialog,
 #delete-member-dialog,
 #password-dialog,
@@ -305,6 +306,7 @@ td { font-variant-numeric: tabular-nums; }
   box-shadow: 0 24px 80px rgba(17, 24, 39, 0.28);
 }
 #adjust-dialog::backdrop,
+#rename-ledger-dialog::backdrop,
 #delete-dialog::backdrop,
 #delete-member-dialog::backdrop,
 #password-dialog::backdrop,
@@ -315,6 +317,7 @@ td { font-variant-numeric: tabular-nums; }
 .current-balance-row { display: flex; align-items: center; justify-content: space-between; padding: 14px; border-radius: 12px; background: #f9fafb; }
 .current-balance-row span { color: #6b7280; }
 .current-balance-row strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+#rename-ledger-current-name { max-width: 70%; overflow-wrap: anywhere; text-align: right; }
 .adjust-input-grid { display: grid; grid-template-columns: 0.7fr 1.3fr; gap: 12px; align-items: start; }
 .adjust-preview {
   display: flex;
@@ -389,6 +392,7 @@ td { font-variant-numeric: tabular-nums; }
   .ledger-grid { grid-template-columns: 1fr; }
   .detail-nav { align-items: stretch; flex-direction: column; }
   .detail-nav-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  #rename-ledger-button { grid-column: 1 / -1; }
   .total-box { text-align: left; }
   .member-add-form { grid-template-columns: 1fr; }
   .member-row { grid-template-columns: 1fr auto; }
