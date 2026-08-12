@@ -9,6 +9,8 @@
   const state = {
     client: null,
     session: null,
+    isAdmin: false,
+    shareToken: null,
     currentLedger: null,
     members: [],
     transactions: [],
@@ -26,14 +28,41 @@
   const views = {
     setup: $("setup-view"),
     login: $("login-view"),
+    shareError: $("share-error-view"),
     app: $("app-view"),
     ledgerList: $("ledger-list-view"),
     ledgerDetail: $("ledger-detail-view")
   };
 
   function showOnly(viewName) {
-    [views.setup, views.login, views.app].forEach((el) => el.classList.add("hidden"));
+    [views.setup, views.login, views.shareError, views.app].forEach((el) => el.classList.add("hidden"));
     views[viewName].classList.remove("hidden");
+  }
+
+  function getShareTokenFromUrl() {
+    const url = new URL(window.location.href);
+    const hashParams = new URLSearchParams(url.hash.slice(1));
+    const value = hashParams.get("ledger") ?? url.searchParams.get("ledger");
+    if (value === null) return null;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+      ? value
+      : "";
+  }
+
+  function clearShareTokenFromUrl() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("ledger");
+    const hashParams = new URLSearchParams(url.hash.slice(1));
+    hashParams.delete("ledger");
+    url.hash = hashParams.toString();
+    window.history.replaceState(null, "", url);
+  }
+
+  function buildShareUrl(ledger) {
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.hash = new URLSearchParams({ ledger: ledger.share_token }).toString();
+    return url.toString();
   }
 
   function setButtonBusy(button, busy, busyText = "处理中…") {
@@ -132,14 +161,16 @@
 
   function syncDetailControls() {
     const disabled = !state.detailReady || state.detailMutationPending;
-    const controls = [
-      $("copy-summary-button"),
-      $("delete-ledger-button"),
-      $("add-member-form").querySelector("button[type='submit']"),
-      $("load-more-transactions-button")
-    ];
+    const controls = [$("copy-summary-button"), $("load-more-transactions-button")];
+    if (state.isAdmin) {
+      controls.push(
+        $("delete-ledger-button"),
+        $("copy-share-link-button"),
+        $("add-member-form").querySelector("button[type='submit']")
+      );
+    }
     controls.forEach((button) => {
-      button.disabled = disabled || button.dataset.busy === "true";
+      if (button) button.disabled = disabled || button.dataset.busy === "true";
     });
     $("member-list").querySelectorAll("button").forEach((button) => {
       button.disabled = disabled || button.dataset.busy === "true";
@@ -191,18 +222,100 @@
   }
 
   async function enterApp() {
-    const isAdmin = await ensureAdmin();
-    if (!isAdmin) {
+    state.shareToken = null;
+    state.isAdmin = await ensureAdmin();
+    if (!state.isAdmin) {
       await state.client.auth.signOut();
       state.session = null;
       showOnly("login");
-      setLoginError("这个账号不是管理员。请先按 README 把该用户 UID 加入 admins 表。");
+      setLoginError("这个账号没有管理员权限。普通查看者请直接打开管理员发来的只读链接。");
       return;
     }
 
-    $("admin-email").textContent = state.session.user.email || "管理员";
+    document.querySelectorAll(".admin-only").forEach((element) => {
+      element.classList.remove("hidden");
+    });
+    $("account-role").textContent = "管理员";
+    $("account-role").classList.remove("readonly");
+    $("account-email").textContent = state.session.user.email || "已登录账号";
+    $("account-email").classList.remove("hidden");
+    $("logout-button").classList.remove("hidden");
+    $("shared-admin-button").classList.add("hidden");
+    $("ledger-list-title").textContent = "账本";
+    $("ledger-list-description").textContent = "创建不同账本，分别管理成员余额。";
+    $("ledger-empty-description").textContent = "在上方输入名称并创建第一个账本。";
+    setLoginError();
     showOnly("app");
     await showLedgerList();
+  }
+
+  async function enterSharedLedger(shareToken) {
+    if (!shareToken) {
+      showOnly("shareError");
+      return;
+    }
+
+    const { data, error } = await state.client.rpc("get_shared_ledger", {
+      p_share_token: shareToken
+    });
+    const ledger = data;
+    if (error || !ledger) {
+      showOnly("shareError");
+      return;
+    }
+
+    state.isAdmin = false;
+    state.shareToken = shareToken;
+    state.currentLedger = {
+      id: ledger.id,
+      name: ledger.name,
+      created_at: ledger.created_at
+    };
+    state.members = ledger.members || [];
+    state.transactions = ledger.transactions || [];
+    state.transactionsHasMore = false;
+    document.querySelectorAll(".admin-only").forEach((element) => {
+      element.classList.add("hidden");
+    });
+    $("account-role").textContent = "只读分享";
+    $("account-role").classList.add("readonly");
+    $("account-email").classList.add("hidden");
+    $("logout-button").classList.add("hidden");
+    $("shared-admin-button").classList.remove("hidden");
+    $("page-title").textContent = ledger.name;
+    $("ledger-title").textContent = ledger.name;
+    $("back-button").classList.add("hidden");
+    views.ledgerList.classList.add("hidden");
+    views.ledgerDetail.classList.remove("hidden");
+    showOnly("app");
+    setDetailStatus("", "ready");
+    renderMembers();
+    renderTransactions();
+  }
+
+  async function showAdminLogin() {
+    clearShareTokenFromUrl();
+    state.shareToken = null;
+    const { data, error } = await state.client.auth.getSession();
+    if (error) {
+      showOnly("login");
+      setLoginError(normalizeError(error));
+      return;
+    }
+
+    state.session = data.session;
+    if (!state.session) {
+      setLoginError();
+      showOnly("login");
+      return;
+    }
+
+    try {
+      await enterApp();
+    } catch (enterError) {
+      showOnly("login");
+      setLoginError(normalizeError(enterError));
+    }
   }
 
   async function handleLogin(event) {
@@ -219,6 +332,7 @@
       if (error) throw error;
 
       state.session = data.session;
+      clearShareTokenFromUrl();
       await enterApp();
       $("password").value = "";
     } catch (error) {
@@ -231,6 +345,8 @@
   async function handleLogout() {
     await state.client.auth.signOut();
     state.session = null;
+    state.isAdmin = false;
+    state.shareToken = null;
     state.currentLedger = null;
     state.members = [];
     state.transactions = [];
@@ -256,10 +372,17 @@
       const openButton = createTextElement("button", "primary", "进入账本");
       openButton.type = "button";
       openButton.addEventListener("click", () => openLedger(ledger));
+      const shareButton = createTextElement("button", "ghost", "复制只读链接");
+      shareButton.type = "button";
+      shareButton.addEventListener("click", () => copyShareLink(ledger));
+
+      const actions = document.createElement("div");
+      actions.className = "ledger-card-actions";
+      actions.append(openButton, shareButton);
 
       const textGroup = document.createElement("div");
       textGroup.append(title, meta);
-      card.append(textGroup, openButton);
+      card.append(textGroup, actions);
       list.append(card);
     });
   }
@@ -267,7 +390,7 @@
   async function fetchLedgers() {
     const { data, error } = await state.client
       .from("ledgers")
-      .select("id,name,created_at")
+      .select("id,name,share_token,created_at")
       .is("deleted_at", null)
       .order("created_at", { ascending: true });
 
@@ -307,6 +430,7 @@
 
   async function handleCreateLedger(event) {
     event.preventDefault();
+    if (!state.isAdmin) return;
     const form = event.currentTarget;
     const button = form.querySelector("button[type='submit']");
     const name = $("ledger-name").value.trim();
@@ -340,6 +464,7 @@
     $("member-balance").value = "0";
     $("page-title").textContent = ledger.name;
     $("ledger-title").textContent = ledger.name;
+    $("back-button").classList.toggle("hidden", Boolean(state.shareToken));
     views.ledgerList.classList.add("hidden");
     views.ledgerDetail.classList.remove("hidden");
     renderMembers();
@@ -366,12 +491,16 @@
       const balance = createTextElement("div", "member-balance", formatMoney(member.balance));
       if (Number(member.balance) < 0) balance.classList.add("negative");
 
-      const adjustButton = createTextElement("button", "ghost", "调整余额");
-      adjustButton.type = "button";
-      adjustButton.disabled = !state.detailReady || state.detailMutationPending;
-      adjustButton.addEventListener("click", () => openAdjustDialog(member));
-
-      row.append(nameWrap, balance, adjustButton);
+      row.append(nameWrap, balance);
+      if (state.isAdmin) {
+        const adjustButton = createTextElement("button", "ghost", "调整余额");
+        adjustButton.type = "button";
+        adjustButton.disabled = !state.detailReady || state.detailMutationPending;
+        adjustButton.addEventListener("click", () => openAdjustDialog(member));
+        row.append(adjustButton);
+      } else {
+        row.classList.add("readonly");
+      }
       list.append(row);
     });
   }
@@ -494,7 +623,7 @@
 
   async function handleAddMember(event) {
     event.preventDefault();
-    if (!state.currentLedger || !state.detailReady || state.detailMutationPending) return;
+    if (!state.isAdmin || !state.currentLedger || !state.detailReady || state.detailMutationPending) return;
 
     const ledgerId = state.currentLedger.id;
     const form = event.currentTarget;
@@ -531,7 +660,7 @@
   }
 
   function openAdjustDialog(member) {
-    if (!state.detailReady || state.detailMutationPending || member.ledger_id !== state.currentLedger?.id) return;
+    if (!state.isAdmin || !state.detailReady || state.detailMutationPending || member.ledger_id !== state.currentLedger?.id) return;
     state.adjustingMember = member;
     $("adjust-member-name").textContent = member.name;
     $("adjust-current-balance").textContent = formatMoney(member.balance);
@@ -567,7 +696,7 @@
   async function handleAdjustBalance(event) {
     event.preventDefault();
     const member = state.adjustingMember;
-    if (!member || !state.detailReady || state.detailMutationPending) return;
+    if (!state.isAdmin || !member || !state.detailReady || state.detailMutationPending) return;
     const ledgerId = member.ledger_id;
 
     const amount = Number($("adjust-amount").value);
@@ -606,16 +735,44 @@
     }
   }
 
-  async function handleDeleteLedger() {
-    if (!state.currentLedger || !state.detailReady || state.detailMutationPending) return;
+  function updateDeleteConfirmation() {
+    const matches = Boolean(
+      state.currentLedger && $("delete-confirm-name").value === state.currentLedger.name
+    );
+    $("delete-submit-button").disabled = !matches || state.detailMutationPending;
+  }
+
+  function openDeleteDialog() {
+    if (!state.isAdmin || !state.currentLedger || !state.detailReady || state.detailMutationPending) return;
+    $("delete-ledger-name").textContent = state.currentLedger.name;
+    $("delete-confirm-name").value = "";
+    $("delete-confirm-name").placeholder = state.currentLedger.name;
+    updateDeleteConfirmation();
+    $("delete-dialog").showModal();
+    window.setTimeout(() => $("delete-confirm-name").focus(), 0);
+  }
+
+  function closeDeleteDialog() {
+    if (state.detailMutationPending) return;
+    $("delete-dialog").close();
+  }
+
+  async function handleDeleteLedger(event) {
+    event.preventDefault();
+    if (!state.isAdmin || !state.currentLedger || !state.detailReady || state.detailMutationPending) return;
     const ledgerId = state.currentLedger.id;
     const name = state.currentLedger.name;
-    const confirmed = window.confirm(`确定删除账本「${name}」吗？\n\n这是软删除，数据库中的成员和历史记录不会被物理删除。`);
-    if (!confirmed) return;
+    if ($("delete-confirm-name").value !== name) {
+      showToast("请输入完整且完全一致的账本名称。", "error");
+      updateDeleteConfirmation();
+      return;
+    }
 
-    const button = $("delete-ledger-button");
+    const button = $("delete-submit-button");
     setButtonBusy(button, true, "删除中…");
     setDetailMutationPending(true);
+    $("delete-close-button").disabled = true;
+    $("delete-cancel-button").disabled = true;
     try {
       const { error } = await state.client.rpc("delete_ledger", {
         p_ledger_id: ledgerId
@@ -623,6 +780,7 @@
       if (error) throw error;
 
       if (state.currentLedger?.id === ledgerId) {
+        $("delete-dialog").close();
         const refreshed = await showLedgerList({ force: true });
         showToast(refreshed ? "账本已删除。" : "账本已删除，但列表刷新失败，请刷新页面。", refreshed ? "success" : "error");
       } else if (!state.currentLedger) {
@@ -632,8 +790,26 @@
       showToast(normalizeError(error), "error");
     } finally {
       setButtonBusy(button, false);
+      $("delete-close-button").disabled = false;
+      $("delete-cancel-button").disabled = false;
       setDetailMutationPending(false);
+      updateDeleteConfirmation();
     }
+  }
+
+  async function copyShareLink(ledger, successMessage = "只读链接已复制。") {
+    if (!state.isAdmin || !ledger?.share_token) return;
+    const shareUrl = buildShareUrl(ledger);
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      showToast(successMessage, "success");
+    } catch {
+      window.prompt("浏览器没有允许自动复制，请手动复制这个只读链接：", shareUrl);
+    }
+  }
+
+  function handleCopyShareLink() {
+    if (state.currentLedger) copyShareLink(state.currentLedger);
   }
 
   async function handleCopySummary() {
@@ -660,8 +836,9 @@
     $("create-ledger-form").addEventListener("submit", handleCreateLedger);
     $("back-button").addEventListener("click", showLedgerList);
     $("add-member-form").addEventListener("submit", handleAddMember);
-    $("delete-ledger-button").addEventListener("click", handleDeleteLedger);
+    $("delete-ledger-button").addEventListener("click", openDeleteDialog);
     $("copy-summary-button").addEventListener("click", handleCopySummary);
+    $("copy-share-link-button").addEventListener("click", handleCopyShareLink);
     $("load-more-transactions-button").addEventListener("click", handleLoadMoreTransactions);
     $("adjust-form").addEventListener("submit", handleAdjustBalance);
     $("adjust-amount").addEventListener("input", updateAdjustPreview);
@@ -670,6 +847,15 @@
     $("adjust-dialog").addEventListener("close", () => {
       state.adjustingMember = null;
     });
+    $("delete-form").addEventListener("submit", handleDeleteLedger);
+    $("delete-confirm-name").addEventListener("input", updateDeleteConfirmation);
+    $("delete-close-button").addEventListener("click", closeDeleteDialog);
+    $("delete-cancel-button").addEventListener("click", closeDeleteDialog);
+    $("delete-dialog").addEventListener("cancel", (event) => {
+      if (state.detailMutationPending) event.preventDefault();
+    });
+    $("shared-admin-button").addEventListener("click", showAdminLogin);
+    $("share-error-admin-button").addEventListener("click", showAdminLogin);
   }
 
   async function init() {
@@ -704,6 +890,16 @@
         }
       }
     );
+
+    const shareToken = getShareTokenFromUrl();
+    if (shareToken !== null) {
+      try {
+        await enterSharedLedger(shareToken);
+      } catch {
+        showOnly("shareError");
+      }
+      return;
+    }
 
     const { data, error } = await state.client.auth.getSession();
     if (error) {

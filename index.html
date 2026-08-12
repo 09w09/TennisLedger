@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#111827">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self' https://*.supabase.co; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <title>TennisLedger · 共享账本</title>
   <link rel="stylesheet" href="./styles.css">
@@ -28,12 +30,12 @@
     <section id="login-view" class="center-card hidden">
       <div class="brand-mark">TL</div>
       <h1>TennisLedger</h1>
-      <p class="muted">管理员登录后才能查看和修改账本。</p>
+      <p class="muted">普通查看者使用专属链接，无需登录。这里仅供管理员登录管理。</p>
 
       <form id="login-form" class="stack-form">
         <label>
           <span>管理员邮箱</span>
-          <input id="email" type="email" autocomplete="username" required placeholder="admin@example.com">
+          <input id="email" type="email" autocomplete="username" required placeholder="name@example.com">
         </label>
         <label>
           <span>密码</span>
@@ -44,6 +46,13 @@
       <p id="login-error" class="form-error hidden" role="alert"></p>
     </section>
 
+    <section id="share-error-view" class="center-card hidden">
+      <div class="brand-mark">TL</div>
+      <h1>无法打开账本</h1>
+      <p id="share-error-message" class="muted">这个只读链接无效、已失效或账本已删除。</p>
+      <button id="share-error-admin-button" class="ghost full standalone-button" type="button">管理员登录</button>
+    </section>
+
     <section id="app-view" class="hidden">
       <header class="topbar">
         <div>
@@ -51,20 +60,22 @@
           <h1 id="page-title">账本管理</h1>
         </div>
         <div class="topbar-actions">
-          <span id="admin-email" class="admin-email"></span>
+          <span id="account-role" class="role-badge"></span>
+          <span id="account-email" class="account-email"></span>
           <button id="logout-button" class="ghost" type="button">退出</button>
+          <button id="shared-admin-button" class="ghost hidden" type="button">管理员登录</button>
         </div>
       </header>
 
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
       <section id="ledger-list-view">
-        <div class="toolbar-card">
+        <div id="ledger-toolbar" class="toolbar-card">
           <div>
-            <h2>账本</h2>
-            <p class="muted">创建不同账本，分别管理成员余额。</p>
+            <h2 id="ledger-list-title">账本</h2>
+            <p id="ledger-list-description" class="muted">创建不同账本，分别管理成员余额。</p>
           </div>
-          <form id="create-ledger-form" class="inline-form">
+          <form id="create-ledger-form" class="inline-form admin-only">
             <input id="ledger-name" maxlength="60" required placeholder="例如：账本1">
             <button class="primary" type="submit">新建账本</button>
           </form>
@@ -73,7 +84,7 @@
         <div id="ledger-list" class="ledger-grid"></div>
         <div id="ledger-empty" class="empty-card hidden">
           <h3>还没有账本</h3>
-          <p class="muted">在上方输入名称并创建第一个账本。</p>
+          <p id="ledger-empty-description" class="muted">在上方输入名称并创建第一个账本。</p>
         </div>
       </section>
 
@@ -82,7 +93,7 @@
           <button id="back-button" class="ghost" type="button">← 返回账本列表</button>
           <div class="detail-nav-actions">
             <button id="copy-summary-button" class="ghost" type="button">复制汇总</button>
-            <button id="delete-ledger-button" class="danger-ghost" type="button">删除账本</button>
+            <button id="copy-share-link-button" class="ghost admin-only" type="button">复制只读链接</button>
           </div>
         </div>
 
@@ -99,7 +110,7 @@
 
         <div id="ledger-detail-status" class="empty-inline detail-status" role="status" aria-live="polite">正在加载账本数据…</div>
 
-        <div class="panel">
+        <div class="panel admin-only">
           <div class="panel-heading">
             <div>
               <h2>添加用户</h2>
@@ -155,6 +166,17 @@
           <div id="transaction-empty" class="empty-inline hidden">还没有操作记录。</div>
           <button id="load-more-transactions-button" class="ghost load-more hidden" type="button">加载更早记录</button>
         </div>
+
+        <details class="danger-zone admin-only">
+          <summary>危险操作</summary>
+          <div class="danger-zone-content">
+            <div>
+              <h2>删除当前账本</h2>
+              <p class="muted">账本会从页面中隐藏。为避免误删，下一步还需要输入完整账本名称。</p>
+            </div>
+            <button id="delete-ledger-button" class="danger-ghost" type="button">删除账本…</button>
+          </div>
+        </details>
       </section>
     </section>
   </main>
@@ -193,6 +215,33 @@
       <div class="dialog-actions">
         <button id="adjust-cancel-button" class="ghost" type="button">取消</button>
         <button id="adjust-submit-button" class="primary" type="submit">确认修改</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="delete-dialog">
+    <form id="delete-form" class="dialog-card">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow danger-text">危险操作</p>
+          <h2>确认删除账本</h2>
+        </div>
+        <button id="delete-close-button" class="icon-button" type="button" aria-label="关闭">×</button>
+      </div>
+
+      <div class="delete-warning">
+        <strong>这会让账本「<span id="delete-ledger-name">—</span>」立即从所有页面消失。</strong>
+        <p>这是软删除，成员和历史记录仍保留在数据库中，但网页没有自行恢复入口。</p>
+      </div>
+
+      <label>
+        <span>请输入完整账本名称以确认</span>
+        <input id="delete-confirm-name" autocomplete="off" required>
+      </label>
+
+      <div class="dialog-actions">
+        <button id="delete-cancel-button" class="ghost" type="button">取消</button>
+        <button id="delete-submit-button" class="danger" type="submit" disabled>确认删除</button>
       </div>
     </form>
   </dialog>
