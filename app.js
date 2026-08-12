@@ -37,6 +37,13 @@
     ledgerDetail: $("ledger-detail-view")
   };
 
+  function showLedgerView(viewName) {
+    const detailOpen = viewName === "detail";
+    views.ledgerList.classList.toggle("hidden", detailOpen);
+    views.ledgerDetail.classList.toggle("hidden", !detailOpen);
+    views.app.classList.toggle("detail-open", detailOpen);
+  }
+
   function showOnly(viewName) {
     [views.setup, views.login, views.shareError, views.app]
       .filter(Boolean)
@@ -313,8 +320,7 @@
     $("page-title").textContent = ledger.name;
     $("ledger-title").textContent = ledger.name;
     $("back-button").classList.add("hidden");
-    views.ledgerList.classList.add("hidden");
-    views.ledgerDetail.classList.remove("hidden");
+    showLedgerView("detail");
     showOnly("app");
     setDetailStatus("", "ready");
     renderMembers();
@@ -538,8 +544,7 @@
     state.transactionsHasMore = false;
     state.detailReady = false;
     $("page-title").textContent = "账本管理";
-    views.ledgerDetail.classList.add("hidden");
-    views.ledgerList.classList.remove("hidden");
+    showLedgerView("list");
     $("ledger-list").replaceChildren();
     $("ledger-empty").classList.add("hidden");
 
@@ -671,8 +676,7 @@
     $("page-title").textContent = ledger.name;
     $("ledger-title").textContent = ledger.name;
     $("back-button").classList.toggle("hidden", Boolean(state.shareToken));
-    views.ledgerList.classList.add("hidden");
-    views.ledgerDetail.classList.remove("hidden");
+    showLedgerView("detail");
     renderMembers();
     renderTransactions();
     await refreshLedgerDetail();

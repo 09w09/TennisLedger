@@ -9,7 +9,7 @@
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self' https://*.supabase.co; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <title>TennisLedger · 共享账本</title>
-  <link rel="stylesheet" href="./styles.css?v=20260812-9">
+  <link rel="stylesheet" href="./styles.css?v=20260812-16">
 </head>
 <body>
   <main class="shell">
@@ -55,16 +55,28 @@
 
     <section id="app-view" class="hidden">
       <header class="topbar">
-        <div>
-          <p class="eyebrow">TennisLedger</p>
-          <h1 id="page-title">账本管理</h1>
+        <div class="topbar-row">
+          <p class="eyebrow brand-eyebrow">TennisLedger</p>
+
+          <div class="topbar-actions">
+            <span id="account-role" class="role-badge"></span>
+            <span id="account-email" class="account-email"></span>
+
+            <details class="admin-menu admin-only">
+              <summary aria-label="更多操作" title="更多操作">
+                <span aria-hidden="true">⋮</span>
+              </summary>
+              <div class="admin-menu-popover">
+                <button id="rename-ledger-button" class="menu-action admin-only" type="button">修改账本名称</button>
+                <button id="change-password-button" class="menu-action admin-only" type="button">修改密码</button>
+                <div class="menu-separator"></div>
+                <button id="logout-button" class="menu-action danger-text" type="button">退出</button>
+              </div>
+            </details>
+          </div>
         </div>
-        <div class="topbar-actions">
-          <span id="account-role" class="role-badge"></span>
-          <span id="account-email" class="account-email"></span>
-          <button id="change-password-button" class="ghost admin-only" type="button">修改密码</button>
-          <button id="logout-button" class="ghost" type="button">退出</button>
-        </div>
+
+        <h1 id="page-title" class="topbar-title">账本管理</h1>
       </header>
 
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
@@ -89,23 +101,28 @@
       </section>
 
       <section id="ledger-detail-view" class="hidden">
-        <div class="detail-nav">
-          <button id="back-button" class="ghost" type="button">← 返回账本列表</button>
-          <div class="detail-nav-actions">
-            <button id="rename-ledger-button" class="ghost admin-only" type="button">修改账本名称</button>
-            <button id="copy-summary-button" class="ghost" type="button">复制汇总</button>
-            <button id="copy-share-link-button" class="ghost admin-only" type="button">复制只读链接</button>
-          </div>
-        </div>
+        <nav class="detail-nav" aria-label="账本导航">
+          <button id="back-button" class="back-link" type="button">← 返回账本列表</button>
+        </nav>
 
-        <div class="summary-card">
-          <div>
-            <p class="eyebrow">当前账本</p>
-            <h2 id="ledger-title">—</h2>
-          </div>
-          <div class="total-box">
-            <span>总余额</span>
-            <strong id="total-balance">¥0.00</strong>
+        <div class="summary-wrap">
+          <img id="ledger-dog" class="ledger-dog" alt="" aria-hidden="true" draggable="false">
+
+          <div class="summary-card">
+            <div class="summary-main">
+              <p class="eyebrow">当前账本</p>
+              <h2 id="ledger-title">—</h2>
+            </div>
+
+            <div class="total-box">
+              <span>总余额</span>
+              <strong id="total-balance">¥0.00</strong>
+            </div>
+
+            <div class="summary-actions">
+              <button id="copy-summary-button" class="compact-action" type="button">复制汇总</button>
+              <button id="copy-share-link-button" class="compact-action admin-only" type="button">复制只读链接</button>
+            </div>
           </div>
         </div>
 
@@ -187,6 +204,10 @@
         </details>
       </section>
     </section>
+
+    <footer class="site-footer">
+      TennisLedger · 兀
+    </footer>
   </main>
 
   <dialog id="adjust-dialog">
@@ -279,7 +300,7 @@
 
       <div class="delete-warning">
         <strong>这会让账本「<span id="delete-ledger-name">—</span>」立即从所有页面消失。</strong>
-        <p>这是软删除，成员和历史记录仍保留在数据库中，但网页没有自行恢复入口。</p>
+        <p>删除成员和历史记录无法从网页处恢复，如须恢复需要连续管理员。</p>
       </div>
 
       <label>
@@ -407,6 +428,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.8"></script>
   <script src="./config.js"></script>
-  <script src="./app.js?v=20260812-9"></script>
+  <script src="./app.js?v=20260812-10"></script>
+  <script src="./ui.js?v=20260812-2"></script>
 </body>
 </html>
